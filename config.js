@@ -1,4 +1,4 @@
-// config.js - v1.3.0
+// config.js - v1.3.1
 console.log("Config loaded..."); // Debug 用
 const GAME_CONFIG = {
     // 基础游戏配置
@@ -296,6 +296,7 @@ const GAME_CONFIG = {
         // 游戏结束界面
         gameOverTitle: "舰船沉没",
         gameOverMessage: "关键组件发生灾难性故障",
+        tutorialCompleteNote: "⚔ 新手教程已完成——再次进入将直达主界面",
         gameOverButton: "重新初始化系统",
 
         victoryTitle: "任务完成",

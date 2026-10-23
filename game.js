@@ -1,4 +1,4 @@
-// game.js - v1.3.0 (UNIVERSAL ARTIFACT SYSTEM 敌我通用神器机制)
+// game.js - v1.3.1 (TUTORIAL FLOW 新手教程流程收尾：完成标记、启动分流、结束提示)
 
 // 音频管理器类
 class AudioManager {
@@ -575,6 +575,7 @@ const game = {
         this.initUIFontSizes();
         this.initUIText();
         this.loadStats(); // 加载统计数据
+        this.tutorialDone = this.loadTutorialFlag(); // 新手教程完成标记（决定启动分流）
         this.bindCinematicEvents();
         this.bindEvents();
         this.initStars();
@@ -918,10 +919,15 @@ const game = {
             }, 1000));
         }, 100));
 
-        // 2秒后显示主菜单
+        // 2秒后分流：教程已完成→主界面；首次进入→跳过主菜单直接开打
         this.cinematicTimeouts.push(setTimeout(() => {
             if (this.state !== "CINEMATIC_MENU" || this.cinematicState !== "TITLE_EMERGING") return;
-            this.showMainMenu();
+            if (this.tutorialDone) {
+                this.showMainMenu();
+            } else {
+                console.log('[v1.3.1] 首次进入：跳过主菜单，直接开始新手教程');
+                this.startStoryMode();
+            }
         }, 3000));
     },
 
@@ -946,25 +952,31 @@ const game = {
         }
     },
 
+    // 开始故事模式（主菜单入口与新手教程直打路径共用）
+    startStoryMode() {
+        const menuContainer = document.getElementById('main-menu-container');
+        if (menuContainer) menuContainer.classList.remove('show');
+
+        // 延迟一点开始，给界面退场留时间
+        setTimeout(() => {
+            document.getElementById('screen-menu').classList.add('hidden');
+            // 显示HUD
+            document.getElementById('hud').classList.remove('hidden');
+
+            // 增加总游戏次数并保存
+            this.stats.total_games_played++;
+            this.saveStats();
+
+            this.start();
+        }, 300);
+    },
+
     // 绑定主菜单事件
     bindMainMenuEvents() {
         document.getElementById('btn-story-mode')?.addEventListener('click', () => {
             this.playSFX('menuConfirm');
-            const menuContainer = document.getElementById('main-menu-container');
-            menuContainer.classList.remove('show');
-
-            // 延迟一点开始，给按钮动画时间
-            setTimeout(() => {
-                document.getElementById('screen-menu').classList.add('hidden');
-                // 显示HUD
-                document.getElementById('hud').classList.remove('hidden');
-
-                // 增加总游戏次数并保存
-                this.stats.total_games_played++;
-                this.saveStats();
-
-                this.start();
-            }, 300);
+            document.getElementById('main-menu-container')?.classList.remove('show');
+            this.startStoryMode();
         });
 
         const placeholderHandler = () => {
@@ -2093,6 +2105,12 @@ const game = {
     endGame(result) {
         this.state = result === "win" ? "WIN" : "GAMEOVER";
 
+        // 新手教程结束判定：第二局起且三件神器全部发放完毕，本局无论胜负教程即完成
+        if (!this.tutorialDone && this.gameAttempt >= 2 && this.availableArtifacts.length === 0) {
+            this.markTutorialComplete();
+            this.appendTutorialCompleteNote();
+        }
+
         if (result === "win") {
             // 播放胜利背景音乐
             this.playBGM('victory');
@@ -2118,6 +2136,20 @@ const game = {
                 document.getElementById('screen-gameover').classList.remove('hidden');
             }
         }
+    },
+
+    // 教程完成提示：在胜利/失败界面追加一行说明
+    appendTutorialCompleteNote() {
+        ['victory-message', 'gameover-message'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el.dataset.tutorialNote) {
+                const note = document.createElement('p');
+                note.className = 'tutorial-complete-note';
+                note.textContent = GAME_CONFIG.text.tutorialCompleteNote;
+                el.insertAdjacentElement('afterend', note);
+                el.dataset.tutorialNote = '1';
+            }
+        });
     },
 
     startGameOverSequence() {
@@ -3457,6 +3489,27 @@ const game = {
             localStorage.setItem('DICE_SORROW_STATS', JSON.stringify(this.stats));
         } catch (e) {
             console.error('Failed to save stats:', e);
+        }
+    },
+
+    // 新手教程完成标记：决定启动时直接开打还是进主界面
+    loadTutorialFlag() {
+        try {
+            return localStorage.getItem('DICE_SORROW_TUTORIAL_DONE') === '1';
+        } catch (e) {
+            console.error('Failed to load tutorial flag:', e);
+            return false;
+        }
+    },
+
+    // 标记教程完成并持久化
+    markTutorialComplete() {
+        this.tutorialDone = true;
+        try {
+            localStorage.setItem('DICE_SORROW_TUTORIAL_DONE', '1');
+            console.log('[v1.3.1] 新手教程完成标记已写入');
+        } catch (e) {
+            console.error('Failed to save tutorial flag:', e);
         }
     },
 
