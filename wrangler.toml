@@ -9,4 +9,4 @@ directory = "./public"
 [[d1_databases]]
 binding = "DB"
 database_name = "dice-sorrow-db"
-database_id = "TO_BE_FILLED" # 创建 D1 后回填真实 id
+database_id = "f65a8197-2d9b-4285-bc13-cbb8edbf6669"
