@@ -1,4 +1,4 @@
-// game.js - v1.2.5 (STATS LOGIC & AUDIO FIX)
+// game.js - v1.3.0 (UNIVERSAL ARTIFACT SYSTEM 敌我通用神器机制)
 
 // 音频管理器类
 class AudioManager {
@@ -1522,6 +1522,42 @@ const game = {
         this.spawnEnemy();
     },
 
+    // 按ID创建神器骰子（v1.3.0 敌我通用，供敌舰生成与调试台共用）
+    createArtifactDieById(id) {
+        switch (id) {
+            case 'frost': return this.createFrostDie();
+            case 'relay': return this.createRelayDie();
+            case 'trample': return this.createTrampleDie();
+            case 'burn': return this.createBurnDie();
+            case 'armor': return this.createArmorDie();
+            default: return null;
+        }
+    },
+
+    // 敌舰神器授予（v1.3.0 敌我通用神器机制）：
+    // 依据 GAME_CONFIG.enemyArtifacts 配置，按关卡线性插值概率决定本关敌舰是否携带神器骰子。
+    // 携带时从神器池随机抽取一枚，替换敌舰的一枚普通骰子（保持关卡数量/点数配置不变），返回神器ID。
+    maybeGrantEnemyArtifact(dice) {
+        const cfg = GAME_CONFIG.enemyArtifacts;
+        if (!cfg || !cfg.enabled) return null;
+        if (this.round < cfg.fromRound) return null;
+        if (!Array.isArray(dice) || dice.length === 0) return null;
+
+        // 携带概率插值：chanceByRound = [fromRound时概率, 第13关时概率]
+        const [fromChance, toChance] = cfg.chanceByRound;
+        const span = Math.max(1, 12 - cfg.fromRound);
+        const t = Math.min(1, Math.max(0, (this.round - cfg.fromRound) / span));
+        const chance = fromChance + (toChance - fromChance) * t;
+        if (Math.random() >= chance) return null;
+
+        const id = cfg.pool[Math.floor(Math.random() * cfg.pool.length)];
+        const artifactDie = this.createArtifactDieById(id);
+        if (!artifactDie) return null;
+        const replaceIdx = Math.floor(Math.random() * dice.length);
+        dice.splice(replaceIdx, 1, artifactDie);
+        return id;
+    },
+
     spawnEnemy() {
         console.log(GAME_CONFIG.text.debug.spawnEnemyCalled.replace('{round}', this.round));
         if (this.round >= 13) {
@@ -1534,6 +1570,11 @@ const game = {
         const dice = [];
         const count = this.rand(eConf.count);
         for (let i = 0; i < count; i++) { dice.push({ v: this.rand(eConf.value) }); }
+        // v1.3.0 敌我通用神器：本关敌舰可能携带一枚神器骰子
+        const grantedArtifact = this.maybeGrantEnemyArtifact(dice);
+        if (grantedArtifact) {
+            console.log(`[v1.3.0] 第${this.round + 1}关敌舰携带神器: ${grantedArtifact}`);
+        }
         this.enemy = {
             x: this.w + 400,
             dice: dice,
@@ -1750,17 +1791,28 @@ const game = {
         }
         document.getElementById('battle-display').innerHTML = '';
 
-        // 中继器神器：当敌方攻击玩家时，允许玩家手动选择承受伤害的骰子
-        if (side === "enemy" && this.hasRelayArtifact() && this.player.dice.length > 1) {
-            const color = this.colors.enemy;
+        // 中继器神器（防守方效果，v1.3.0 敌我通用）：
+        // - 敌方攻击且玩家持有中继器 → 玩家手动选择承受伤害的骰子
+        // - 玩家攻击且敌方持有中继器 → 敌方AI自动选择承受伤害的骰子
+        const defenderSide = this.getOpposite(side);
+        const defenderUnit = this.getUnit(defenderSide);
+        if (this.hasRelayArtifact(defenderSide) && defenderUnit.dice.length > 1) {
+            const color = side === "player" ? this.colors.matrix : this.colors.enemy;
             const totalDmg = this.currentRolls.reduce((a, b) => a + b, 0);
-            // 显示目标选择界面
-            this.showTargetSelection(totalDmg, color, side);
-            return; // 等待玩家选择，不继续执行伤害结算
+            if (side === "enemy") {
+                // 玩家中继器：显示目标选择界面
+                this.showTargetSelection(totalDmg, color, side);
+                return; // 等待玩家选择，不继续执行伤害结算
+            }
+            // 敌方中继器：AI 自动选择最优承伤骰子，直接按指定索引发射
+            const aiIndex = this.pickEnemyRelayTarget(totalDmg);
+            this.logToDebugConsole(`🔀 敌方中继器启动：AI 将伤害导向第 ${aiIndex + 1} 号骰子`);
+            this.spawnFloatingText('中继器！', this.enemy.x, this.enemy.y - 140, '#00ccff');
+            this.fireCannonballs(side, aiIndex);
+        } else {
+            // 确认后发射炮弹
+            this.fireCannonballs(side);
         }
-
-        // 确认后发射炮弹
-        this.fireCannonballs(side);
 
         // 等待炮弹落地 (轮询检查)
         const waitForProjectiles = () => {
@@ -1776,23 +1828,28 @@ const game = {
         await waitForProjectiles();
         await new Promise(r => setTimeout(r, GAME_CONFIG.combat.cannonballWaitTime));
 
-        // 燃烧弹神器：在玩家攻击并造成伤害后，为敌方所有骰子叠加燃烧1层
-        if (side === "player" && this.hasBurnArtifact() && this.enemy && this.enemy.dice) {
-            this.applyBurnStacksToAll(this.enemy, 1);
+        // 攻击方神器结算（v1.3.0 敌我通用）：燃烧弹 / 装甲弹 / 霜冻，效果跟随攻击方
+        const attackerHasBurn = this.hasBurnArtifact(side);
+        const attackerHasArmor = this.hasArmorArtifact(side);
+        const attackerHasFrost = this.hasFrostArtifact(side);
+
+        // 燃烧弹神器：攻击并造成伤害后，为防守方所有骰子叠加燃烧1层
+        if (attackerHasBurn) {
+            this.applyBurnStacksToAll(defenderUnit, 1);
         }
 
-        // 装甲弹神器：在玩家攻击时，根据本次掷出的骰子点数生成新骰子
-        if (side === "player" && this.hasArmorArtifact()) {
-            const armorDie = this.player.dice.find(d => d.artifactId === 'armor');
+        // 装甲弹神器：攻击时，根据本次掷出的骰子点数为攻击方生成装甲骰子
+        if (attackerHasArmor) {
+            const armorDie = this.getUnit(side).dice.find(d => d.artifactId === 'armor');
             if (armorDie) {
                 const armorLevel = armorDie.armorLevel || 1; // 默认装甲1
-                this.applyArmorEffect(armorLevel, this.currentRolls);
+                this.applyArmorEffect(armorLevel, this.currentRolls, side);
             }
         }
 
-        // 霜冻神器：在玩家攻击并造成伤害后，随机冻结一枚敌方骰子
-        if (side === "player" && this.hasFrostArtifact()) {
-            setTimeout(() => this.applyFrostFreeze(), 500); // 延迟显示冰封效果
+        // 霜冻神器：攻击并造成伤害后，随机冻结一枚防守方的骰子
+        if (attackerHasFrost) {
+            setTimeout(() => this.applyFrostFreeze(side), 500); // 延迟显示冰封效果
         }
 
         // 燃烧效果：在每次攻击结束后结算燃烧伤害
@@ -1872,8 +1929,17 @@ const game = {
             const c = document.createElement('canvas');
             c.width = c.height = 80;
             const dctx = c.getContext('2d');
-            this.drawPixelDie(dctx, 40, 40, die.v, 70, this.colors.matrix, false);
+            // v1.3.0 敌我通用：神器骰子按神器配色渲染，并标注名称提示可打捞夺取
+            const props = this.getDieDisplayProperties(die);
+            this.drawPixelDie(dctx, 40, 40, die.v, 70, (props.dieColor && props.dieColor !== '#fff') ? props.dieColor : this.colors.matrix, false);
             card.appendChild(c);
+            if (die.artifactId) {
+                const textKey = { frost: 'artifactFrostName', relay: 'artifactRelayName', trample: 'artifactTrampleName', burn: 'artifactBurnName', armor: 'artifactArmorName' }[die.artifactId];
+                const label = document.createElement('div');
+                label.className = 'loot-artifact-label';
+                label.textContent = (textKey && GAME_CONFIG.text[textKey]) || die.name || die.artifactId;
+                card.appendChild(label);
+            }
             container.appendChild(card);
             cards.push(card);
         });
@@ -1925,10 +1991,26 @@ const game = {
     confirmLoot() {
         console.log(GAME_CONFIG.text.debug.confirmLootCalled.replace('{dice}', JSON.stringify(this.lootDice)));
         if (this.lootDice) {
-            this.player.dice.push({ v: this.lootDice.v });
+            // v1.3.0 敌我通用神器：打捞的骰子若为神器骰/装甲骰，保留其特性归玩家所有（可夺取敌舰神器）
+            const stealAllowed = GAME_CONFIG.enemyArtifacts && GAME_CONFIG.enemyArtifacts.lootStealEnabled;
+            const salvaged = {
+                v: this.lootDice.v,
+                artifactId: stealAllowed ? (this.lootDice.artifactId || null) : null,
+                name: this.lootDice.name || null,
+                isFrozen: false,
+                isFragile: false,
+                isArmor: !!this.lootDice.isArmor,
+                armorLevel: this.lootDice.armorLevel || 1
+            };
+            this.player.dice.push(salvaged);
             // 更新最大HP
             this.player.maxHp += this.lootDice.v;
+            if (salvaged.artifactId) {
+                this.spawnFloatingText(`打捞神器：${salvaged.name || salvaged.artifactId}`, this.player.x, this.player.y - 160, '#00ccff');
+                this.logToDebugConsole(`⛏️ 战利品打捞到神器骰子：${salvaged.name || salvaged.artifactId}（已归玩家所有）`);
+            }
             this.lootDice = null;
+            this.updateArtifactDisplay();
 
             // 播放获得战利品音效
             this.playSFX('lootPickup');
@@ -1990,8 +2072,8 @@ const game = {
         this.state = "ENEMY_TURN";
         this.rollSequence("enemy");
         setTimeout(() => {
-            // 重新计算当前可用的骰子（可能有新的冻结状态）
-            const currentActiveDice = this.enemy.dice.filter(d => !d.isFrozen);
+            // 重新计算当前可用的骰子（可能有新的冻结状态；装甲骰不参与进攻，需排除）
+            const currentActiveDice = this.enemy.dice.filter(d => !d.isFrozen && !d.isArmor);
             const sum = this.currentRolls.reduce((a, b) => a + b, 0);
             const total = currentActiveDice.reduce((a, b) => a + b.v, 0);
 
@@ -2344,30 +2426,48 @@ const game = {
         };
     },
 
-    hasFrostArtifact() {
-        return this.player.dice && this.player.dice.some(d => d.artifactId === 'frost');
+    // ===== 阵营通用辅助（v1.3.0 敌我通用神器机制） =====
+    // side: "player" | "enemy"，返回对应阵营单位对象
+    getUnit(side) {
+        return side === "player" ? this.player : this.enemy;
     },
 
-    hasRelayArtifact() {
-        return this.player.dice && this.player.dice.some(d => d.artifactId === 'relay');
+    // 返回对方阵营 side
+    getOpposite(side) {
+        return side === "player" ? "enemy" : "player";
     },
 
-    hasTrampleArtifact() {
-        return this.player.dice && this.player.dice.some(d => d.artifactId === 'trample');
+    // 判断指定阵营是否持有某神器骰子（默认查询玩家，向后兼容旧调用）
+    unitHasArtifact(side, artifactId) {
+        const unit = this.getUnit(side);
+        return !!(unit && unit.dice && unit.dice.some(d => d.artifactId === artifactId));
+    },
+
+    hasFrostArtifact(side = "player") {
+        return this.unitHasArtifact(side, 'frost');
+    },
+
+    hasRelayArtifact(side = "player") {
+        return this.unitHasArtifact(side, 'relay');
+    },
+
+    hasTrampleArtifact(side = "player") {
+        return this.unitHasArtifact(side, 'trample');
     },
 
     // 是否持有燃烧弹神器
-    hasBurnArtifact() {
-        return this.player.dice && this.player.dice.some(d => d.artifactId === 'burn');
+    hasBurnArtifact(side = "player") {
+        return this.unitHasArtifact(side, 'burn');
     },
 
     // 是否持有装甲弹神器
-    hasArmorArtifact() {
-        return this.player.dice && this.player.dice.some(d => d.artifactId === 'armor');
+    hasArmorArtifact(side = "player") {
+        return this.unitHasArtifact(side, 'armor');
     },
 
     // 践踏效果：溢出伤害继续对其他骰子造成伤害
-    applyTrampleEffect(target, remainingDamage, color) {
+    // attackerSide: 践踏发起方（用于统计归口；v1.3.0 敌我通用）
+    applyTrampleEffect(target, remainingDamage, color, attackerSide = "player") {
         // 找到下一个可攻击的骰子（从后往前，模拟最前排）
         let nextTargetIndex = target.dice.length - 1;
 
@@ -2385,24 +2485,32 @@ const game = {
         const dieX = target.x + (target === this.enemy ? 80 - col * 60 : -80 + col * 60);
         const dieY = this.player.y - 20 - (row * 60);
 
+        // 统计归口：践踏目标为敌方时计入"造成伤害"，反之计入"受到伤害"
+        const addStat = (amount) => {
+            if (attackerSide === "player") {
+                this.stats.total_damage_dealt += amount;
+            } else {
+                this.stats.total_damage_taken += amount;
+            }
+        };
+
         if (isFatal) {
             // 践踏伤害摧毁了这个骰子
             target.dice.splice(nextTargetIndex, 1);
             this.spawnExplosion(dieX, dieY, color);
             this.spawnFloatingText(`践踏 -${remainingDamage}`, dieX, dieY - 50, '#ff6600');
+            addStat(effectiveHp);
 
             // 递归处理剩余伤害
             const newRemainingDamage = remainingDamage - effectiveHp;
             if (newRemainingDamage > 0) {
-                setTimeout(() => this.applyTrampleEffect(target, newRemainingDamage, color), 200);
+                setTimeout(() => this.applyTrampleEffect(target, newRemainingDamage, color, attackerSide), 200);
             }
         } else {
             // 应用伤害
             let dealt = Math.min(nextDie.v, remainingDamage);
             nextDie.v -= dealt;
-
-            // 记录统计
-            this.stats.total_damage_dealt += dealt;
+            addStat(dealt);
 
             if (nextDie.v <= 0) {
                 // 如果骰子被摧毁，也记录为击杀
@@ -2470,8 +2578,10 @@ const game = {
     },
 
     // 装甲弹效果：攻击时，根据掷出的骰子点数生成新骰子
-    applyArmorEffect(armorLevel, rolledDice) {
-        if (!this.player || !this.player.dice || !rolledDice) return;
+    // side: 装甲骰子的归属方（即持有装甲弹神器的攻击方；v1.3.0 敌我通用）
+    applyArmorEffect(armorLevel, rolledDice, side = "player") {
+        const unit = this.getUnit(side);
+        if (!unit || !unit.dice || !rolledDice) return;
 
         // 统计本次掷出的骰子中点数为armorLevel的骰子数量
         const matchingRollsCount = rolledDice.filter(roll => roll === armorLevel).length;
@@ -2487,30 +2597,56 @@ const game = {
                     isFragile: false,
                     isArmor: true // 标记为装甲骰子，不参与进攻
                 };
-                this.player.dice.push(newDie);
-                this.spawnFloatingText(`装甲 +6`, this.player.x + (Math.random() - 0.5) * 100, this.player.y - 100, '#ffd700');
+                unit.dice.push(newDie);
+                this.spawnFloatingText(`装甲 +6`, unit.x + (Math.random() - 0.5) * 100, unit.y - 100, '#ffd700');
             }
             this.playSFX('artifactUnlock'); // 使用解锁音效表示新骰子生成
         }
     },
 
-    // 霜冻效果：在玩家每次攻击前冻结一枚敌方骰子
-    applyFrostFreeze() {
-        if (!this.enemy || !this.enemy.dice || this.enemy.dice.length === 0) return;
-        const candidates = this.enemy.dice.filter(d => !d.isFrozen);
+    // 霜冻效果：持有霜冻神器的攻击方，在每次攻击前冻结一枚防守方的骰子
+    // side: 攻击方阵营，霜冻作用于其对方（v1.3.0 敌我通用）
+    applyFrostFreeze(side = "player") {
+        const defender = this.getUnit(this.getOpposite(side));
+        if (!defender || !defender.dice || defender.dice.length === 0) return;
+        const candidates = defender.dice.filter(d => !d.isFrozen);
         if (candidates.length === 0) return;
         const target = candidates[Math.floor(Math.random() * candidates.length)];
         if (target.isFrozen) {
             // 如果已经被冻结，则触发更深的效果（变为脆弱）
             target.isFragile = true;
-            this.logToDebugConsole('❄️ 寒流侵袭：敌方骰子变得脆弱！');
+            this.logToDebugConsole(side === "player"
+                ? '❄️ 寒流侵袭：敌方骰子变得脆弱！'
+                : '❄️ 寒流侵袭：我方骰子变得脆弱！');
         } else {
             target.isFrozen = true;
-            this.logToDebugConsole('❄️ 霜冻爆发：一枚敌方骰子被冰封！');
+            this.logToDebugConsole(side === "player"
+                ? '❄️ 霜冻爆发：一枚敌方骰子被冰封！'
+                : '❄️ 霜冻爆发：一枚我方骰子被敌方冰封！');
         }
 
         // 播放骰子冻结音效
         this.playSFX('diceFreeze');
+    },
+
+    // 敌方中继器 AI 选靶（v1.3.0 敌我通用）：
+    // 策略：1) 有能完全吸收且存活的骰子时，优先装甲骰，其次点数最低者（保护高攻击力骰子）
+    //       2) 全员都会被摧毁时，导向有效HP最低的骰子，减少总HP损失
+    pickEnemyRelayTarget(damage) {
+        const dice = this.enemy.dice;
+        const eff = (d) => d.isFragile ? 1 : d.v;
+        const indices = dice.map((_, i) => i);
+
+        const survivors = indices.filter(i => eff(dice[i]) > damage);
+        if (survivors.length > 0) {
+            const armorIdx = survivors.find(i => dice[i].isArmor);
+            if (armorIdx !== undefined) return armorIdx;
+            survivors.sort((a, b) => dice[a].v - dice[b].v);
+            return survivors[0];
+        }
+
+        indices.sort((a, b) => eff(dice[a]) - eff(dice[b]));
+        return indices[0];
     },
 
     // 绘制像素风格神秘人形象（用于修理工头像）
@@ -2907,6 +3043,30 @@ const game = {
             this.drawShipDice(this.player.x + drift, this.player.y + bob, this.player.dice, this.colors.matrix, tilt, isTargetSelectionModeForPlayer);
 
             this.drawShipDice(this.enemy.x - drift, this.player.y + bob, this.enemy.dice, this.colors.enemy, -tilt);
+
+            // v1.3.0 敌我通用神器：敌舰持有的神器图标（绘制在敌舰骰子上方，提示玩家其携带的神器）
+            const enemyArtifactDice = this.enemy.dice.filter(d => d.artifactId);
+            if (enemyArtifactDice.length > 0 && this.state !== "CINEMATIC_MENU") {
+                const icons = { frost: '❄', relay: '🔗', trample: '💥', burn: '🔥', armor: '🛡️' };
+                const startX = this.enemy.x - ((enemyArtifactDice.length - 1) * 22) / 2;
+                this.ctx.font = '20px serif';
+                this.ctx.textAlign = 'center';
+                this.ctx.textBaseline = 'middle';
+                enemyArtifactDice.forEach((die, i) => {
+                    const iconX = startX + i * 22;
+                    const iconY = this.player.y + bob - 150 + Math.sin(Date.now() / 300 + i) * 3;
+                    // 背景徽章
+                    this.ctx.fillStyle = 'rgba(10, 10, 20, 0.75)';
+                    this.ctx.beginPath();
+                    this.ctx.arc(iconX, iconY, 13, 0, Math.PI * 2);
+                    this.ctx.fill();
+                    this.ctx.strokeStyle = '#ff4d6d';
+                    this.ctx.lineWidth = 1.5;
+                    this.ctx.stroke();
+                    this.ctx.fillText(icons[die.artifactId] || '?', iconX, iconY + 1);
+                });
+                this.ctx.lineWidth = 1;
+            }
         }
 
         // 3. 绘制粒子 (烟雾/白沫在船只之上)
@@ -2937,9 +3097,10 @@ const game = {
             if (c.progress >= 1) {
                 c.life = 0;
 
-                // 对于中继器神器（敌方攻击玩家），伤害已经在confirmTargetSelection中手动应用了
+                // 对于中继器神器（玩家防守时），伤害已经在confirmTargetSelection中手动应用了
                 // 这里只播放视觉效果，不重复应用伤害
-                const isRelayDamage = (c.side === "enemy" && c.targetIndex !== null && this.hasRelayArtifact());
+                // 注：敌方中继器（玩家攻击时）不走此分支——AI 选定目标索引后由下方正常流程结算
+                const isRelayDamage = (c.side === "enemy" && c.targetIndex !== null && this.hasRelayArtifact("player"));
 
                 if (!isRelayDamage) {
                     // 正常情况：炮弹命中时应用伤害
@@ -2979,10 +3140,10 @@ const game = {
                         // 播放爆炸音效
                         this.playSFX('explosion');
 
-                        // 践踏效果：如果持有爆破者神器且有溢出伤害，则继续对其他骰子造成伤害
-                        // 只有玩家攻击时才触发践踏
-                        if (remainingDamage > 0 && c.side === "player" && this.hasTrampleArtifact()) {
-                            this.applyTrampleEffect(target, remainingDamage, c.color);
+                        // 践踏效果：如果攻击方持有爆破者神器且有溢出伤害，则继续对防守方其他骰子造成伤害
+                        // v1.3.0 敌我通用：践踏跟随攻击方生效（玩家或敌方均可触发）
+                        if (remainingDamage > 0 && this.hasTrampleArtifact(c.side)) {
+                            this.applyTrampleEffect(target, remainingDamage, c.color, c.side);
                         }
 
                         // 霜冻神器：在玩家攻击并造成伤害后，随机冻结一枚敌方骰子
@@ -3499,7 +3660,7 @@ const game = {
     evalDebugCommand(command) {
         // 基础命令
         if (command === 'help') {
-            return `可用命令:\nhelp - 显示帮助\nclear - 清空输出\nstatus - 显示游戏状态\ndice - 显示骰子信息\nartifacts - 显示神器信息\n\n快捷添加神器:\n输入由数字组成的ID串，例如 12345\n1=霜冻  2=中继器  3=爆破者  4=燃烧弹  5=装甲弹`;
+            return `可用命令:\nhelp - 显示帮助\nclear - 清空输出\nstatus - 显示游戏状态\ndice - 显示骰子信息\nartifacts - 显示神器信息\n\n快捷添加神器（玩家侧）:\n输入由数字组成的ID串，例如 12345\n1=霜冻  2=中继器  3=爆破者  4=燃烧弹  5=装甲弹\n\n快捷添加神器（敌方侧，v1.3.0 敌我通用）:\n输入 e 开头的ID串，例如 e24\ne1=霜冻  e2=中继器  e3=爆破者  e4=燃烧弹  e5=装甲弹\ne0 = 清空敌方神器`;
         }
 
         if (command === 'clear') {
@@ -3523,14 +3684,40 @@ const game = {
             this.enemy.dice.forEach((d, i) => {
                 const burnInfo = d.burnStacks ? `(燃烧${d.burnStacks})` : '';
                 const armorInfo = d.isArmor ? '(装甲)' : '';
-                result += `  ${i}: ${d.v} ${d.isFrozen ? '(冻结)' : ''} ${armorInfo} ${burnInfo}\n`;
+                result += `  ${i}: ${d.v} ${d.isFrozen ? '(冻结)' : ''} ${armorInfo} ${burnInfo} ${d.artifactId ? `(${d.artifactId})` : ''}\n`;
             });
             return result;
         }
 
         if (command === 'artifacts') {
             const artifacts = this.player.dice.filter(d => d.artifactId).map(d => d.name).join(', ');
-            return `持有神器: ${artifacts || '无'}\n激活神器: ${this.activeArtifact?.id || '无'}`;
+            const enemyArtifacts = (this.enemy && this.enemy.dice) ? this.enemy.dice.filter(d => d.artifactId).map(d => d.name).join(', ') : '';
+            return `持有神器: ${artifacts || '无'}\n敌方神器: ${enemyArtifacts || '无'}\n激活神器: ${this.activeArtifact?.id || '无'}`;
+        }
+
+        // v1.3.0 敌我通用神器：快捷给敌方添加神器（例如 e24 = 中继器 + 燃烧弹；e0 = 清空）
+        if (/^e\d+$/.test(command)) {
+            if (command === 'e0') {
+                let removed = 0;
+                if (this.enemy && this.enemy.dice) {
+                    this.enemy.dice = this.enemy.dice.filter(d => !d.artifactId);
+                    removed = 1;
+                }
+                return '已清空敌方神器骰子';
+            }
+            if (!this.enemy || !this.enemy.dice) return '敌方尚未生成，请先进入战斗';
+            const added = [];
+            for (const ch of command.slice(1)) {
+                const map = { '1': 'frost', '2': 'relay', '3': 'trample', '4': 'burn', '5': 'armor' };
+                const die = this.createArtifactDieById(map[ch]);
+                if (die) {
+                    this.enemy.dice.push(die);
+                    added.push(die.name || map[ch]);
+                }
+            }
+            return added.length > 0
+                ? `已为敌方添加神器: ${added.join(', ')}（效果遵循敌我通用规则）`
+                : '输入的数字中没有对应的神器ID';
         }
 
         // 纯数字命令：按位添加对应ID的神器骰子

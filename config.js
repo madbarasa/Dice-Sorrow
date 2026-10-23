@@ -1,4 +1,4 @@
-// config.js - v1.2.5
+// config.js - v1.3.0
 console.log("Config loaded..."); // Debug 用
 const GAME_CONFIG = {
     // 基础游戏配置
@@ -142,6 +142,16 @@ const GAME_CONFIG = {
         // 敌舰运动
         enemyApproachSpeed: 4,       // 敌舰接近速度
         enemyAmbushRange: 0.75,      // 敌舰伏击范围(屏幕比例)
+    },
+
+    // 敌方神器系统（v1.3.0：神器骰子敌我通用）
+    // 神器效果归属"攻击方/防守方"角色：霜冻/燃烧/装甲/践踏跟随攻击方，中继器跟随防守方
+    enemyArtifacts: {
+        enabled: true,
+        fromRound: 2,              // 从第3关(索引2)开始敌舰可能携带神器骰子
+        chanceByRound: [0.15, 0.5],// 携带概率按关卡线性插值：第3关15% → 第13关50%
+        pool: ['frost', 'relay', 'trample', 'burn', 'armor'], // 可用神器池（与玩家侧一致）
+        lootStealEnabled: true,    // 击沉携带神器的敌舰后，战利品可能打捞到该神器骰子（神器归玩家所有）
     },
 
     // UI界面参数
