@@ -1,4 +1,4 @@
-// game.js - v1.3.1 (TUTORIAL FLOW 新手教程流程收尾：完成标记、启动分流、结束提示)
+// game.js - v1.4.0 (REMOTE CONFIG 远程配表：Workers+D1 下发，本地兜底)
 
 // 音频管理器类
 class AudioManager {
@@ -576,6 +576,7 @@ const game = {
         this.initUIText();
         this.loadStats(); // 加载统计数据
         this.tutorialDone = this.loadTutorialFlag(); // 新手教程完成标记（决定启动分流）
+        await this.loadRemoteConfig(); // v1.4.0：拉取 D1 远程配表（失败走内置默认值）
         this.bindCinematicEvents();
         this.bindEvents();
         this.initStars();
@@ -3510,6 +3511,22 @@ const game = {
             console.log('[v1.3.1] 新手教程完成标记已写入');
         } catch (e) {
             console.error('Failed to save tutorial flag:', e);
+        }
+    },
+
+    // v1.4.0：拉取 Workers/D1 远程配表并合并进 GAME_CONFIG
+    // 任何失败（无后端/file://直开/超时）都静默降级为仓库内置默认值
+    async loadRemoteConfig() {
+        try {
+            const resp = await fetch('/api/config/bundle', {
+                signal: (typeof AbortSignal !== 'undefined' && AbortSignal.timeout)
+                    ? AbortSignal.timeout(2500) : undefined
+            });
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            const bundle = await resp.json();
+            window.applyRemoteConfig(bundle);
+        } catch (e) {
+            console.warn('[v1.4.0] 远程配表不可用，使用内置默认值:', e.message);
         }
     },
 

@@ -1,3 +1,14 @@
+[v1.4.0] - 2026-10-23
+- 云端配表系统（Remote Config，Cloudflare Workers + D1）：
+    * 新增 Worker 后端（Hono 框架）：/api/config/bundle 一次性下发关卡表/神器池/参数覆盖，服务端 60 秒内存缓存。
+    * D1 三表：game_config（点路径参数 KV，可扩展任意 GAME_CONFIG 已有键）、levels（13 关配表）、artifacts（神器池+权重预留）。
+    * 真实调校数值只存 D1，不进代码仓库：config.js 降级为「结构 + 兜底默认值」，仓库开源后数值仍可控。
+    * 前端启动时拉取配置合并（点路径覆盖仅限已存在键，防脏数据注入）；失败/超时(2.5s)/file:// 直开时静默降级内置默认值，游戏永远可玩。
+    * 目录调整：游戏运行文件移入 public/（Coup Ahoo Clone.html 更名 index.html），server/ 与 scripts/ 不进静态托管面（workers.dev 上访问 404）。
+    * 在线调参：修改 D1 数值最多 60 秒后线上生效，无需发版。
+- 移除 GitHub Pages 部署 workflow（部署链路切换至 Cloudflare Workers Git 自动构建）。
+- 同步更新 GDD 文档（新增 §7 远程配表架构）。
+
 [v1.3.1] - 2026-10-23
 - 新手教程流程收尾（Tutorial Flow Completion，GDD §6.1）：
     * 新增教程完成标记持久化（localStorage: DICE_SORROW_TUTORIAL_DONE）：第二局起（gameAttempt >= 2）且三件神器全部发放完毕（availableArtifacts 为空）后，本局无论通关与否即判定教程完成并落盘。

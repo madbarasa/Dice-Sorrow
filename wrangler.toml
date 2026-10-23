@@ -1,0 +1,12 @@
+name = "dice-sorrow"
+main = "server/index.ts"
+compatibility_date = "2025-01-01"
+
+# 静态托管：只暴露 public/（游戏运行文件），server/scripts/文档 不上网
+[assets]
+directory = "./public"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "dice-sorrow-db"
+database_id = "TO_BE_FILLED" # 创建 D1 后回填真实 id

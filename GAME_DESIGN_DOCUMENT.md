@@ -328,3 +328,40 @@ if (currentSum < maxSum * 0.5) {
 ---
 
 **文档维护**: 本文档基于实际代码实现编写，确保所有描述都与 `game.js` 中的逻辑保持一致。如有代码更新，请同步更新本文档。
+
+## 7. 远程配表架构 (v1.4.0)
+
+### 7.1 架构总览
+
+游戏采用「单 Worker 一体化」架构：一个 Cloudflare Worker 同时承担静态托管与配表服务。
+
+```
+浏览器 ── GET / ──────────────► [Workers 静态资产] public/ (index.html, game.js, config.js, audio/)
+浏览器 ── GET /api/config/bundle ► [Hono 路由] ──► [D1: levels / artifacts / game_config]
+```
+
+### 7.2 数据表
+
+| 表 | 用途 | 说明 |
+|---|---|---|
+| `levels` | 13 关配表 | 每关骰子数量区间与点数区间，超出关数后循环使用 |
+| `artifacts` | 神器池 | 神器 ID/名称/权重（预留）/启用开关 |
+| `game_config` | 参数 KV | 键为 `GAME_CONFIG` 内的点路径（如 `player.ambushChance`），值为 JSON；可覆盖任意已存在参数 |
+
+### 7.3 加载与降级策略
+
+1. `game.init()` 启动时请求 `/api/config/bundle`（2.5 秒超时）。
+2. `applyRemoteConfig(bundle)` 合并：`levels`/`artifacts` 整体替换，`overrides` 按点路径覆盖**已存在**的键（防止脏数据注入新字段）。
+3. 任何失败（无后端 / `file://` 直开 / 超时 / 非 200）→ 静默降级，使用仓库内置默认值，游戏照常可玩。
+
+### 7.4 调参方式
+
+- 短期：`wrangler d1 execute dice-sorrow-db --command "UPDATE game_config SET config_value='0.9' WHERE config_key='player.ambushChance'"`（线上加 `--remote`）。
+- 服务端缓存 60 秒，调参后最多 1 分钟生效，无需发版。
+- 后续可选：Admin 调参后台（参考 ZYG-h5game 的 admin 模式）。
+
+### 7.5 数值保密边界
+
+- **进仓库（公开可见）**：代码结构、兜底默认值、本设计文档。
+- **只存 D1（不进仓库）**：真实调校后的关卡数值、概率参数、神器池配置。
+- `server/` 与 `scripts/` 不在静态托管目录内，公网无法访问。

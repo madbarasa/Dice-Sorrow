@@ -1,4 +1,4 @@
-// config.js - v1.3.1
+// config.js - v1.4.0
 console.log("Config loaded..."); // Debug 用
 const GAME_CONFIG = {
     // 基础游戏配置
@@ -377,4 +377,41 @@ const GAME_CONFIG = {
             title: "🎮 控制台"
         },
     }
+};
+
+// ============ v1.4.0 远程配表（Cloudflare Workers + D1） ============
+// 启动时由 game.init() 拉取 /api/config/bundle 并调用本函数合并；
+// 失败/超时/本地直开(file://)时静默跳过，仓库内置默认值保证游戏永远可玩。
+// 真实调校数值只存在 D1，不进代码仓库。
+window.applyRemoteConfig = function (bundle) {
+    if (!bundle || typeof bundle !== 'object') return false;
+
+    // 关卡表：整体替换（结构与本地一致：{count:[min,max], value:[min,max]}）
+    if (Array.isArray(bundle.levels) && bundle.levels.length > 0) {
+        GAME_CONFIG.levels = bundle.levels;
+    }
+
+    // 神器池：敌舰可携带池整体替换
+    if (Array.isArray(bundle.artifacts) && bundle.artifacts.length > 0) {
+        if (GAME_CONFIG.enemyArtifacts && Array.isArray(GAME_CONFIG.enemyArtifacts.pool)) {
+            GAME_CONFIG.enemyArtifacts.pool = bundle.artifacts;
+        }
+    }
+
+    // 点路径覆盖：{"player.ambushChance": 0.5} → GAME_CONFIG.player.ambushChance
+    // 只覆盖已存在的键，防止脏数据注入新字段
+    if (bundle.overrides && typeof bundle.overrides === 'object') {
+        Object.keys(bundle.overrides).forEach((path) => {
+            const keys = path.split('.');
+            let node = GAME_CONFIG;
+            for (let i = 0; i < keys.length - 1; i++) {
+                if (!node || typeof node[keys[i]] !== 'object') return;
+                node = node[keys[i]];
+            }
+            const leaf = keys[keys.length - 1];
+            if (node && leaf in node) node[leaf] = bundle.overrides[path];
+        });
+    }
+    console.log('[v1.4.0] 远程配表已应用');
+    return true;
 };
