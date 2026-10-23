@@ -9,7 +9,6 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  administration: write
 
 concurrency:
   group: "pages"
@@ -33,11 +32,8 @@ jobs:
           cp game.js config.js _site/
           cp audio/* _site/audio/
 
-      # enablement: true 首次运行时自动开启仓库 Pages（需 administration: write）
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
