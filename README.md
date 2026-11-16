@@ -26,6 +26,8 @@
     <a href="GAME_DESIGN_DOCUMENT.md"><strong>查看游戏策划文档 »</strong></a>
     <br />
     <br />
+    <a href="https://madbarasa.github.io/Dice-Sorrow/"><strong>在线试玩 »</strong></a>
+    <br />
     <a href="https://github.com/madbarasa/Dice-Sorrow">查看仓库</a>
     &middot;
     <a href="https://github.com/madbarasa/Dice-Sorrow/issues/new?labels=bug">报告缺陷</a>
@@ -96,6 +98,8 @@
 
 <!-- GETTING STARTED -->
 ## 开始使用
+
+无需安装即可在浏览器中直接试玩：[https://madbarasa.github.io/Dice-Sorrow/](https://madbarasa.github.io/Dice-Sorrow/)
 
 以下是在本地运行项目的步骤。
 
