@@ -1,3 +1,10 @@
+[v1.4.1] - 2026-11-16
+- 代码与设计同步：修复调试控制台因 config.debug.consoleEnabled 缺失而无法初始化的问题，现可通过 F12 / 反引号开关。
+- 修复敌方自伤全灭分支未累计“击败敌舰/完成回合”统计的问题。
+- 游戏策划文档收敛为唯一一份 GAME_DESIGN_DOCUMENT.md，版本号统一为 v1.4.1；移除过时的 PROJECT_REVIEW_v1.1.2.md 与 TEST_CASES.md。
+- 更新 public/audio/README.md，与实际 18 个音效文件一致。
+- .gitignore 排除 .taptap-init 与 maker 相关本地文件。
+
 [v1.4.0] - 2026-10-23
 - 云端配表系统（Remote Config，Cloudflare Workers + D1）：
     * 新增 Worker 后端（Hono 框架）：/api/config/bundle 一次性下发关卡表/神器池/参数覆盖，服务端 60 秒内存缓存。

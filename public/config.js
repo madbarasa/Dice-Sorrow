@@ -1,4 +1,4 @@
-// config.js - v1.4.0
+// config.js - v1.4.1
 console.log("Config loaded..."); // Debug 用
 const GAME_CONFIG = {
     // 基础游戏配置
@@ -238,6 +238,7 @@ const GAME_CONFIG = {
     // 测试控制台设置
     debug: {
         invulnerable: false,   // 玩家无敌模式
+        consoleEnabled: true,  // 是否启用调试控制台（F12 / 反引号开关）
         showConsoleOnStart: false, // 启动时是否直接显示调试控制台
         logLevel: 'info'       // 日志级别: 'debug', 'info', 'warn', 'error'
     },

@@ -1,4 +1,4 @@
-// game.js - v1.4.0 (REMOTE CONFIG 远程配表：Workers+D1 下发，本地兜底)
+// game.js - v1.4.1 (CODE-DESIGN SYNC)
 
 // 音频管理器类
 class AudioManager {
@@ -1886,6 +1886,9 @@ const game = {
             if (!this.enemy || !this.enemy.dice || this.enemy.dice.length === 0) {
                 console.log("Enemy dice empty after enemy attack - triggering win sequence");
                 this.round++;
+                this.stats.total_enemies_defeated++;
+                this.stats.total_rounds_completed++;
+                this.saveStats();
                 if (this.enemy) this.enemy.dead = true;
                 setTimeout(() => {
                     this.showLoot();

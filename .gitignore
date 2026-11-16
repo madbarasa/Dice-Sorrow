@@ -1,3 +1,8 @@
 node_modules/
 .wrangler/
 _dist/
+.review/
+.taptap-init/
+doctor.json
+tools/check_lua_traps.mjs
+tools/json_pick.mjs

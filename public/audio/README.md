@@ -1,58 +1,46 @@
 # 音效资源文件夹
 
-这个文件夹包含游戏《骰骨之海》的所有音效资源文件。
+本文件夹包含游戏《骰骨之海》(v1.4.1) 的全部音效资源。
 
 ## 文件格式
-每个音效都提供两种格式：
-- `.ogg` - 主要格式，优先使用
-- `.mp3` - 备用格式，当ogg不支持时使用
 
-## 音效分类
+所有音效统一为 `.ogg` 格式，共 18 个文件。文件路径配置于 `public/config.js` 的 `audio.files`，播放逻辑实现于 `public/game.js` 的 `AudioManager` 类。
 
-### 🎯 背景音乐 (BGM)
-- `main-menu.ogg/mp3` - 主界面背景音乐
-- `battle.ogg/mp3` - 海战战斗背景音乐
-- `victory.ogg/mp3` - 胜利背景音乐
-- `defeat.ogg/mp3` - 失败背景音乐
+## 音效清单
 
-### 🎮 界面交互音效
-- `menu-navigate.ogg/mp3` - 菜单上下导航
-- `menu-confirm.ogg/mp3` - 菜单确认选择
-- `menu-cancel.ogg/mp3` - 菜单取消/返回
-- `ui-hover.ogg/mp3` - 按钮悬停
-- `interface-open.ogg/mp3` - 界面打开
-- `interface-close.ogg/mp3` - 界面关闭
+### 背景音乐 (BGM)
+- `main-menu.ogg` - 主界面 / 开场界面背景音乐
+- `battle.ogg` - 战斗背景音乐
+- `victory.ogg` - 胜利背景音乐
+- `defeat.ogg` - 失败背景音乐
+- `merchant-appear.ogg` - 神秘商人界面背景音乐
 
-### ⚓ 游戏事件音效
-- `thunder.ogg/mp3` - 雷鸣音效
-- `victory.ogg/mp3` - 游戏胜利
-- `defeat.ogg/mp3` - 游戏失败
-- `artifact-unlock.ogg/mp3` - 解锁神器
-- `merchant-appear.ogg/mp3` - 商人出现
+### 界面交互音效
+- `menu-navigate.ogg` - 菜单导航
+- `menu-confirm.ogg` - 菜单确认选择
+- `menu-cancel.ogg` - 菜单取消 / 返回
+- `interface-close.ogg` - 界面关闭
+- `ui-click.ogg` - 通用点击反馈
 
-### 🎲 战斗系统音效
-- `dice-roll.ogg/mp3` - 骰子投掷
-- `dice-reroll.ogg/mp3` - 骰子重投
-- `cannon-fire.ogg/mp3` - 发射炮弹
-- `explosion.ogg/mp3` - 炮弹命中爆炸
-- `dice-freeze.ogg/mp3` - 骰子冻结
-- `loot-pickup.ogg/mp3` - 获得战利品
+### 战斗音效
+- `dice-roll.ogg` - 骰子投掷
+- `dice-reroll.ogg` - 骰子重投
+- `dice-freeze.ogg` - 骰子冻结
+- `cannon-fire.ogg` - 发射炮弹
+- `explosion.ogg` - 炮弹命中爆炸 / 践踏 / 燃烧
+- `artifact-unlock.ogg` - 神器解锁 / 装甲骰子生成
 
-### 🌊 环境音效
-- `ocean-waves.ogg/mp3` - 海浪声
-- `wind.ogg/mp3` - 风声//不需要
+### 战利品与环境
+- `loot-pickup.ogg` - 获得战利品
+- `ocean-waves.ogg` - 海浪环境音
 
-### 📊 反馈音效
-- `positive-feedback.ogg/mp3` - 正面反馈
-- `negative-feedback.ogg/mp3` - 负面反馈
-- `warning.ogg/mp3` - 警告音效
-- `notification.ogg/mp3` - 通知音效
+## 播放规则
 
-## 注意事项
-- 所有文件都是占位符，需要用实际的音效文件替换
-- BGM文件设置为循环播放
-- 音效文件大小建议控制在合理范围内以优化加载性能
-- 支持立体声，建议使用44.1kHz采样率
+- BGM 循环播放，按场景切换，切换时带淡入淡出
+- 主音量、BGM 音量、SFX 音量三级独立控制
+- Web Audio API 为主路径，`file://` 协议或不支持时降级为 HTML5 Audio
+- 关键音效（菜单确认 / 取消、掷骰、开火、爆炸、战利品、神器解锁）预加载
 
 ## 音效配置
-音效的播放逻辑和音量控制在 `config.js` 中配置，在 `game.js` 中实现播放逻辑。
+
+音量与文件路径在 `public/config.js` 的 `audio` 配置项中维护，播放调用在 `public/game.js` 中通过 `playSFX(key)` 与 `playBGM(key)` 完成。新增音效需同时补充文件、config 路径项与播放调用。
