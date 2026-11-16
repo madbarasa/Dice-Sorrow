@@ -13,6 +13,10 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
+  <a href="https://github.com/madbarasa/Dice-Sorrow">
+    <img src="assets/agnes-images/logo.png" alt="骰骨之海 Logo" width="120" height="120">
+  </a>
+
   <h1 align="center">骰骨之海</h1>
   <h3 align="center">Dice Sorrow</h3>
 
